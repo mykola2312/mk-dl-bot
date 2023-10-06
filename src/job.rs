@@ -1,18 +1,29 @@
 use anyhow::{Result, anyhow};
-use std::{future::Future, marker::PhantomData, sync::Mutex, thread::JoinHandle, collections::HashMap};
+use std::sync::{Arc, RwLock, MutexGuard};
+use std::thread;
+use std::{future::Future, thread::JoinHandle, collections::HashMap};
+use std::sync::{Mutex, mpsc};
+use mpsc::{Sender, Receiver};
 
-pub trait JobData<T>: Sized + Send + From<T> where T: Sized + Send {
+pub trait JobData<T>
+where
+    Self: Sized,
+    T: Sized 
+{
     fn empty() -> Self;
     fn new(value: T) -> Self;
-    fn get(&self) -> Option<&T>;
+    fn get(&self) -> Option<Arc<T>>;
 }
 
-struct JobDataValue<T> {
-    value: Option<T>
+struct JobDataValue<T> where T: Send {
+    value: Option<Arc<T>>
 }
 
 //#![derive(Send)]
-impl<T> JobData<T> for JobDataValue<T> where T: Sized + Send {
+impl<T> JobData<T> for JobDataValue<T>
+where 
+    T: Sized + Send
+{
     fn empty() -> Self {
         Self { value: None}
     }
@@ -26,26 +37,43 @@ impl<T> JobData<T> for JobDataValue<T> where T: Sized + Send {
     }
 }
 
-impl<T> From<T> for JobDataValue<T> {
+impl<T> From<T> for JobDataValue<T>
+where
+    Self: From<T>,
+    T: Send
+{
     fn from(value: T) -> Self {
         Self { value: Some(value) }
     }
 }
 
-impl<T> Into<Option<T>> for JobDataValue<T> {
+impl<T> Into<Option<T>> for JobDataValue<T> 
+where T: Send
+{
     fn into(self) -> Option<T> {
         self.value
     }
 }
 
+pub trait JobRun
+where Self: Sync
+{
+    fn run_job(&mut self) -> JobStatus;
+}
+
+#[derive(Clone)]
 pub enum JobStatus {
     Waiting,
     Pending,
     Done(bool)
 }
 
-//#[async_trait]
-pub struct Job<In, Out, Handler: 'static> {
+pub struct Job<In, Out, Handler> 
+where
+    In: Send,
+    Out: Send,
+    Handler: Send + 'static
+{
     handle: &'static Handler,
     input: JobDataValue<In>,
     output: JobDataValue<Out>,
@@ -56,7 +84,7 @@ impl<In, Out, Handler> Job<In, Out, Handler>
 where
     In: Sized + Send,
     Out: Sized + Send,
-    Handler: Fn(&mut Self) -> Box<dyn Future<Output = u32>> + 'static
+    Handler: Fn(&mut Self) -> Box<dyn Future<Output = u32>> + Send + 'static
 {
     pub fn new(handle: &'static Handler, data: In) -> Self {
         Self {
@@ -84,12 +112,66 @@ where
     }
 }
 
+impl<In, Out, Handler> JobRun for Job<In, Out, Handler>
+where
+    Self: Sync,
+    In: Sized + Send,
+    Out: Sized + Send,
+    Handler: Fn(&mut Self) -> Box<dyn Future<Output = u32>> + Send + 'static
+{
+    fn run_job(&mut self) -> JobStatus {
+        self.output = JobData::empty();
+        let _ = Box::pin((self.handle)(self));
 
+        self.status.clone()
+    }
+}
+
+type JobRef<'a> = Arc::<dyn JobRun + 'a>;
 type JobId = i32;
+
+pub struct JobControl {
+
+}
+
+pub struct JobWorker {
+    join_handle: Option<JoinHandle<()>>,
+    rx_chan: Receiver::<JobControl>,
+    tx_chan: Sender::<JobControl>,
+    current_job: Option<JobId>
+}
+
+impl JobWorker {
+    pub fn new(rx_chan: Receiver<JobControl>, tx_chan: Sender<JobControl>) -> Self {
+        JobWorker {
+            join_handle: None,
+            rx_chan: Arc::clone(rx_chan),
+            tx_chan: Mutex::new(tx_chan),
+            current_job: None
+        }
+    }
+
+    pub fn start(self) {
+        //let worker = Arc::new(self);
+        let join_handle =thread::spawn(move || {
+            let mut worker = &self;
+            worker.run()
+        });
+    }
+
+    fn run(&mut self) {
+
+    }
+}
+
 pub struct JobQueue<In, Out, Handler: 'static>
+where
+    In: Send,
+    Out: Send,
+    Handler: Send + 'static
 {
     jobs: Mutex<HashMap<JobId, Job::<In, Out, Handler>>>,
-    workers: Vec<JoinHandle<()>>,
+    workers: Vec<JobWorker>,
     worker_limit: usize,
     job_id_counter: JobId
 }
@@ -98,7 +180,7 @@ impl<In, Out, Handler> JobQueue<In, Out, Handler>
 where
     In: Sized + Send,
     Out: Sized + Send,
-    Handler: Fn(&mut Job<In, Out, Handler>) -> Box<dyn Future<Output = u32>> + Send
+    Handler: Fn(&mut Job<In, Out, Handler>) -> Box<dyn Future<Output = u32>> + Send + Sync + 'static
 {
     pub fn new(worker_limit: usize) -> Self {
         Self {
