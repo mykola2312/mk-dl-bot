@@ -12,11 +12,11 @@ where
 {
     fn empty() -> Self;
     fn new(value: T) -> Self;
-    fn get(&self) -> Option<Arc<T>>;
+    fn get(&self) -> Option<&T>;
 }
 
 struct JobDataValue<T> where T: Send {
-    value: Option<Arc<T>>
+    value: Arc<Option<T>>
 }
 
 //#![derive(Send)]
@@ -25,33 +25,18 @@ where
     T: Sized + Send
 {
     fn empty() -> Self {
-        Self { value: None}
+        Self { value: Arc::new(None)}
     }
 
     fn new(value: T) -> Self {
-        Self::from(value)
+        Self { value: Arc::new(Some(value)) }
     }
 
     fn get(&self) -> Option<&T> {
-        self.value.as_ref()
-    }
-}
-
-impl<T> From<T> for JobDataValue<T>
-where
-    Self: From<T>,
-    T: Send
-{
-    fn from(value: T) -> Self {
-        Self { value: Some(value) }
-    }
-}
-
-impl<T> Into<Option<T>> for JobDataValue<T> 
-where T: Send
-{
-    fn into(self) -> Option<T> {
-        self.value
+        match self.value.as_ref() {
+            Some(val) => Some(val),
+            None => None
+        }
     }
 }
 
@@ -134,10 +119,17 @@ pub struct JobControl {
 
 }
 
+impl JobControl
+where
+    Self: Sync
+{
+
+}
+
 pub struct JobWorker {
     join_handle: Option<JoinHandle<()>>,
-    rx_chan: Receiver::<JobControl>,
-    tx_chan: Sender::<JobControl>,
+    rx_chan: RwLock<Receiver::<JobControl>>,
+    tx_chan: Mutex<Sender::<JobControl>>,
     current_job: Option<JobId>
 }
 
@@ -145,17 +137,15 @@ impl JobWorker {
     pub fn new(rx_chan: Receiver<JobControl>, tx_chan: Sender<JobControl>) -> Self {
         JobWorker {
             join_handle: None,
-            rx_chan: Arc::clone(rx_chan),
+            rx_chan: RwLock::new(rx_chan),
             tx_chan: Mutex::new(tx_chan),
             current_job: None
         }
     }
 
-    pub fn start(self) {
-        //let worker = Arc::new(self);
-        let join_handle =thread::spawn(move || {
-            let mut worker = &self;
-            worker.run()
+    pub fn start(mut self) {
+        let join_handle= thread::spawn(move || {
+            self.run();
         });
     }
 
