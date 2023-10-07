@@ -31,8 +31,12 @@ where
     .expect(format!("env '{}' parse error", name).as_str())
 }
 
+use job::JobQueue;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    //let mut queue = JobQueue::new()
+
     dotenv().ok();
 
     let bot = Bot::new(env::var("BOT_TOKEN")?);
