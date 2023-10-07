@@ -15,11 +15,10 @@ enum WorkerMessage<In, Out> {
     JobDone((JobId, Out))
 }
 
+type WorkerChannel<In: Sized + Send + Clone, Out: Sized + Send + Clone> = (Sender<WorkerMessage<In, Out>>, Receiver<WorkerMessage<In, Out>>);
 pub struct JobQueue<In, Out> {
     jobs: HashMap<JobId, JobData<In, Out>>,
-    chan_tx: Sender<WorkerMessage<In, Out>>,
-    chan_rx: Receiver<WorkerMessage<In, Out>>,
-    workers: Vec<JoinHandle<()>>,
+    workers: Vec<(WorkerChannel<In,Out>, JoinHandle<()>)>,
     max_workers: usize,
     job_counter: JobId
 }
@@ -30,21 +29,25 @@ where
     Out: Sized + Send
 {
     pub fn new(max_workers: usize) -> Self {
-        let (chan_tx, chan_rx) = channel::<WorkerMessage<In, Out>>();
         Self {
             jobs: HashMap::new(),
-            chan_tx,
-            chan_rx,
             workers: Vec::new(),
             max_workers,
             job_counter: 0
         }
     }
 
+    fn new_worker_channel() -> (WorkerChannel<In, Out>, WorkerChannel<In, Out>) {
+        let mut queue_chan: WorkerChannel<In, Out> = channel();
+        let mut worker_chan = (queue_chan.0.clone(), queue_chan.1);
+
+        (queue_chan, worker_chan)
+    }
+
     pub fn add_worker(&mut self) {
-        let (tx, rx) = channel::<WorkerMessage<In, Out>>();
-        self.workers.push(thread::spawn(move || {
-            
-        }));
+        let (mut queue_chan, mut worker_chan) = Self::new_worker_channel();
+        self.workers.push((queue_chan, thread::spawn(move || {
+            worker_chan.0.send(WorkerMessage::PollJob);
+        })));
     }
 }
