@@ -1,39 +1,43 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
+use mpsc::{Receiver, Sender};
 use std::sync::mpsc::channel;
-use std::sync::{Arc, RwLock, MutexGuard};
+use std::sync::{mpsc, Mutex};
+use std::sync::{Arc, MutexGuard, RwLock};
 use std::thread;
-use std::{future::Future, thread::JoinHandle, collections::HashMap};
-use std::sync::{Mutex, mpsc};
-use mpsc::{Sender, Receiver};
+use std::{collections::HashMap, future::Future, thread::JoinHandle};
 
 type JobId = i32;
-type JobData<In, Out> = (In, Box<dyn Fn(In) -> Out + Send>);
+type JobData<In, Out> = (In, Arc<dyn Fn(In) -> Out + Send + Sync + 'static>);
 
+#[derive(Clone)]
 enum WorkerMessage<In, Out> {
     PollJob,
     JobRun((JobId, JobData<In, Out>)),
-    JobDone((JobId, Out))
+    JobDone((JobId, Out)),
 }
 
-type WorkerChannel<In: Sized + Send + Clone, Out: Sized + Send + Clone> = (Sender<WorkerMessage<In, Out>>, Receiver<WorkerMessage<In, Out>>);
+type WorkerChannel<In, Out> = (
+    Sender<WorkerMessage<In, Out>>,
+    Receiver<WorkerMessage<In, Out>>,
+);
 pub struct JobQueue<In, Out> {
     jobs: HashMap<JobId, JobData<In, Out>>,
-    workers: Vec<(WorkerChannel<In,Out>, JoinHandle<()>)>,
+    workers: Vec<(WorkerChannel<In, Out>, JoinHandle<()>)>,
     max_workers: usize,
-    job_counter: JobId
+    job_counter: JobId,
 }
 
 impl<In, Out> JobQueue<In, Out>
 where
-    In: Sized + Send,
-    Out: Sized + Send
+    In: Sized + Send + 'static,
+    Out: Sized + Send + 'static,
 {
     pub fn new(max_workers: usize) -> Self {
         Self {
             jobs: HashMap::new(),
             workers: Vec::new(),
             max_workers,
-            job_counter: 0
+            job_counter: 0,
         }
     }
 
@@ -45,9 +49,14 @@ where
     }
 
     pub fn add_worker(&mut self) {
-        let (mut queue_chan, mut worker_chan) = Self::new_worker_channel();
-        self.workers.push((queue_chan, thread::spawn(move || {
-            worker_chan.0.send(WorkerMessage::PollJob);
-        })));
+        let ( queue_chan, mut worker_chan) = Self::new_worker_channel();
+        self.workers.push((
+            queue_chan,
+            thread::spawn(move || {
+                let mut chan = worker_chan;
+                chan.0.send(WorkerMessage::PollJob).expect("send")
+            }),
+        ));
     }
 }
+  
