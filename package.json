@@ -1,0 +1,25 @@
+{
+  "name": "mk-dl-bot",
+  "description": "MK Download Bot",
+  "version": "0.0.1",
+  "author": {
+    "name": "mykola2312",
+    "url": "https://github.com/mykola2312",
+    "email": "49044616+mykola2312@users.noreply.github.com"
+  },
+  "license": "GPL-3.0-only",
+  "scripts": {
+    "dev": "npx tsx watch src/index.ts",
+    "lint": "npx eslint \"src/**/*.ts\"",
+    "lint:fix": "npx eslint \"src/**/*.ts\" --fix"
+  },
+  "dependencies": {
+    "gramio": "^0.0.46"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "@types/node": "^20.14.15",
+    "eslint": "^9.8.0",
+    "@antfu/eslint-config": "^2.24.0"
+  }
+}
