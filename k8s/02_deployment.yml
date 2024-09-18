@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: mk-dl-bot
+    service: bot
+  name: bot
+  namespace: mk-dl-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mk-dl-bot
+      service: bot
+  template:
+    metadata:
+      labels:
+        app: mk-dl-bot
+        service: bot
+    spec:
+      containers:
+        - image: mykola2312/mk-dl-bot:v0.1.1
+          name: bot
+          envFrom:
+            - secretRef:
+                name: secret
