@@ -9,8 +9,8 @@
   },
   "license": "GPL-3.0-only",
   "scripts": {
-    "start": "deno run --allow-net --allow-read --allow-env --env src/index.ts",
-    "dev": "deno run --allow-net --allow-read --allow-env --env --watch src/index.ts",
+    "start": "deno run --allow-net --allow-read --allow-run --allow-env --env src/index.ts",
+    "dev": "deno run --allow-net --allow-read --allow-run --allow-env --env --watch src/index.ts",
     "lint": "npx eslint \"src/**/*.ts\"",
     "lint:fix": "npx eslint \"src/**/*.ts\" --fix"
   },
