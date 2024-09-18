@@ -1,7 +1,14 @@
-import { Bot } from "gramio"
+import { Bot, BotOptions } from "gramio"
 
-const bot = new Bot(process.env.TOKEN as string)
-    .command("start", (context) => context.send("Hi!"))
-    .onStart(({ info }) => console.log(`✨ Bot ${info.username} was started!`));
+const bot = new Bot({
+    token: Deno.env.get("BOT_TOKEN"),
+    api: {
+        baseURL: Deno.env.get("BOT_API_URL"),
+    },
+} as BotOptions);
+
+bot.command("test", (ctx) => {
+    ctx.send("yooo wassup");
+});
 
 bot.start();
